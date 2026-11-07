@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="麻将识牌军师" />
+  <meta name="theme-color" content="#072a19" />
+  <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+  <title>📷 麻将实景识牌军师 · 雀神AI辅助</title>
+  <link rel="stylesheet" href="./style.css?v=1.0.0" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      min-height: 100dvh;
+      overflow-x: hidden;
+      overflow-y: auto !important;
+      position: static !important;
+      background: radial-gradient(circle at 50% 15%, #124d30 0%, #072214 65%, #04120b 100%);
+      color: #fdfdfd;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    .standalone-shell {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: max(12px, env(safe-area-inset-top)) 12px max(24px, env(safe-area-inset-bottom)) 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .standalone-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      background: rgba(8, 24, 16, 0.92);
+      border: 1.5px solid rgba(212, 175, 55, 0.5);
+      border-radius: 16px;
+      padding: 10px 16px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+    .standalone-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 18px;
+      font-weight: 900;
+      color: var(--gold-light);
+    }
+    .standalone-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .assist-viewfinder {
+      min-height: 160px !important;
+      max-height: 220px !important;
+    }
+    @media (max-width: 680px) {
+      .assist-top-grid {
+        grid-template-columns: 1fr !important;
+      }
+      .assist-viewfinder {
+        min-height: 150px !important;
+        max-height: 190px !important;
+      }
+    }
+  </style>
+</head>
+<body class="orient-force-portrait">
+  <div class="standalone-shell">
+    <!-- Top Header -->
+    <header class="standalone-header">
+      <div>
+        <div class="standalone-brand">
+          <span>📷</span>
+          <span>麻将实景识牌军师 · 雀神AI辅助</span>
+        </div>
+        <div class="standalone-sub" id="assistCameraStatus">将现实中的 13 或 14 张麻将牌排成一排拍照识别，或点击下方牌库极速选牌</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button type="button" class="ghost-btn assist-mini-btn" id="btnAssistDemoHand">🎲 随机示例</button>
+        <button type="button" class="ghost-btn assist-mini-btn" id="btnAssistClearHand">🗑️ 清空手牌</button>
+      </div>
+    </header>
+
+    <!-- 1. Camera Viewfinder & Controls -->
+    <section class="assist-top-grid">
+      <div class="assist-viewfinder">
+        <video id="assistCameraVideo" playsinline autoplay muted style="display:none;"></video>
+        <canvas id="assistSnapCanvas" style="display:none;"></canvas>
+        <div class="assist-camera-placeholder" id="assistCameraPlaceholder">
+          <div style="font-size:32px;">📷</div>
+          <div>点击右侧「🎥 开启摄像头」或「🖼️ 拍照/传图」读取手牌</div>
+        </div>
+        <div class="assist-scan-frame">
+          <span class="assist-scan-hint">请将一排麻将牌横向对齐放入虚线框内</span>
+        </div>
+      </div>
+
+      <div class="assist-cam-controls">
+        <div class="assist-ctrl-row">
+          <button type="button" class="primary-btn green assist-btn" id="btnAssistCapture">📸 立即拍照识别</button>
+          <button type="button" class="primary-btn orange assist-btn" id="btnAssistUpload">🖼️ 拍照/相册上传</button>
+          <input type="file" id="assistFileInput" accept="image/*" capture="environment" style="display:none;" />
+        </div>
+        <div class="assist-ctrl-row">
+          <button type="button" class="ghost-btn assist-mini-btn" id="btnAssistStartCam">🎥 开启摄像头</button>
+          <select id="assistTargetCountSelect" class="assist-select" title="识别张数" style="flex:1;">
+            <option value="14" selected>识别 14 张 (轮到出牌)</option>
+            <option value="13">识别 13 张 (听牌/等摸)</option>
+            <option value="11">识别 11 张 (已吃碰1副)</option>
+            <option value="10">识别 10 张 (已吃碰1副)</option>
+            <option value="8">识别 8 张 (已吃碰2副)</option>
+            <option value="7">识别 7 张 (已吃碰2副)</option>
+          </select>
+        </div>
+        <div class="assist-api-bar">
+          <span>🤖 Gemini Key(选填)：</span>
+          <input id="assistGeminiKeyInput" type="password" placeholder="可填免费 Gemini API Key 秒识，留空用本地引擎" />
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Current Hand Interactive Editor -->
+    <section class="assist-hand-section">
+      <div class="assist-hand-header">
+        <span class="assist-hand-badge" id="assistHandCountBadge">当前手牌：14 张</span>
+        <span class="assist-edit-hint" id="assistEditModeHint">💡 点击手牌可替换校正，点击右上角 × 可打出/移除</span>
+      </div>
+      <div class="assist-hand-row" id="assistHandRow"></div>
+    </section>
+
+    <!-- 3. Master AI Recommendations & Ting Output -->
+    <section class="assist-analysis-box" id="assistAnalysisOutput"></section>
+
+    <!-- 4. One-Tap Tile Keyboard for Instant Correction or Drawing New Tile -->
+    <section class="assist-palette-wrap">
+      <div class="assist-palette-title">🀄 极速牌库（点击上方手牌后点此秒改；未选中时点此即为「摸进新牌」）：</div>
+      <div class="assist-tile-palette" id="assistTilePalette"></div>
+    </section>
+  </div>
+
+  <script src="./engine.js?v=1.0.0"></script>
+  <script src="./camera-assist.js?v=1.0.0"></script>
+  <script>
+    // Auto-render on standalone page load
+    window.addEventListener('DOMContentLoaded', function() {
+      if (window.MahjongCameraAssist) {
+        window.MahjongCameraAssist.setHand([0, 1, 2, 4, 5, 9, 10, 11, 18, 19, 20, 27, 27, 31]);
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#14663a"/>
+      <stop offset="60%" stop-color="#09381f"/>
+      <stop offset="100%" stop-color="#041a0d"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff2a3"/>
+      <stop offset="50%" stop-color="#d4af37"/>
+      <stop offset="100%" stop-color="#8a6712"/>
+    </linearGradient>
+    <linearGradient id="ivory" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f0ebe0"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="512" height="512" rx="110" fill="url(#bg)"/>
+  <rect x="12" y="12" width="488" height="488" rx="100" fill="none" stroke="url(#gold)" stroke-width="5" stroke-opacity="0.5"/>
+
+  <!-- 3D Mahjong Tile -->
+  <g filter="url(#shadow)">
+    <!-- Tile Back & Rim -->
+    <rect x="136" y="86" width="240" height="340" rx="28" fill="#0d522f"/>
+    <!-- Tile Front Face -->
+    <rect x="146" y="96" width="220" height="320" rx="22" fill="url(#ivory)" stroke="#dcd6c8" stroke-width="2"/>
+  </g>
+
+  <!-- Chinese Character 發 (Fa / Fortune) -->
+  <text x="256" y="325" text-anchor="middle" font-size="220" font-weight="900" fill="#178a4c" font-family="KaiTi, STKaiti, serif">發</text>
+
+  <!-- Golden Corner Sparks -->
+  <circle cx="80" cy="80" r="8" fill="url(#gold)"/>
+  <circle cx="432" cy="80" r="8" fill="url(#gold)"/>
+  <circle cx="80" cy="432" r="8" fill="url(#gold)"/>
+  <circle cx="432" cy="432" r="8" fill="url(#gold)"/>
+</svg>
