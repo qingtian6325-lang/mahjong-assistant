@@ -509,9 +509,12 @@
             <option value="7">手牌 7 张 (已2副露)</option>
           </select>
         </div>
-        <div class="assist-api-bar">
-          <span>🤖 Gemini Key(选填)：</span>
-          <input id="assistGeminiKeyInput" type="password" placeholder="填入免费 Gemini Key 开启全桌四家高精度视觉解析" />
+        <div class="assist-api-bar" style="justify-content:space-between;flex-wrap:wrap;">
+          <span style="color:#6ee7b7;font-weight:800;">⚡ 免Key内置AI视觉引擎已启用（开箱即用）</span>
+          <details style="font-size:11px;color:#cbd5e1;cursor:pointer;">
+            <summary style="outline:none;">⚙️ 进阶Key(免填)</summary>
+            <input id="assistGeminiKeyInput" type="password" placeholder="可选：填入Gemini Key" style="margin-top:4px;width:160px;" />
+          </details>
         </div>
       </div>
     </section>

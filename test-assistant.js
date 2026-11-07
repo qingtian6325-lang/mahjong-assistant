@@ -162,6 +162,54 @@ console.log('ALL ENGINE UNIT TESTS PASSED');
   // 5. Load 4-seat Demo Game (#btnAssistDemoHand) to verify full-table claim banner + threat badges visually
   await page.click('#btnAssistDemoHand');
   await page.waitForTimeout(150);
+
+  // 6. Test Keyless Built-in 5-Zone Vision Engine (No API Key required!)
+  // Render a synthetic 5-zone camera frame (14 hand tiles at bottom + opponent discard in left zone) and run keyless recognition
+  const keylessRecResult = await page.evaluate(async () => {
+    const c = document.createElement('canvas');
+    c.width = 800;
+    c.height = 450;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#0c4d2d';
+    ctx.fillRect(0, 0, 800, 450);
+
+    // Draw 14 distinct tiles in the bottom hand zone (y: 66%..94%)
+    const handTiles = [0, 4, 8, 9, 13, 17, 18, 22, 26, 27, 31, 32, 33, 33];
+    const cropX = Math.floor(800 * 0.04);
+    const cropW = Math.floor(800 * 0.92);
+    const cropY = Math.floor(450 * 0.64);
+    const cropH = Math.floor(450 * 0.32);
+    const slotW = cropW / 14;
+
+    for (let i = 0; i < 14; i++) {
+      const t = handTiles[i];
+      let svgStr = window.MahjongEngine.faceSVG(t);
+      if (!svgStr.includes('xmlns=')) {
+        svgStr = svgStr.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ');
+      }
+      const img = new Image();
+      const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
+      await new Promise(res => { img.onload = res; img.onerror = res; img.src = url; });
+      const tx = cropX + i * slotW + 2;
+      const ty = cropY + 6;
+      const tw = slotW - 4;
+      const th = cropH - 12;
+      ctx.fillStyle = '#fdfaf2';
+      ctx.fillRect(tx, ty, tw, th);
+      ctx.drawImage(img, tx, ty, tw, th);
+    }
+
+    const res = await window.MahjongCameraAssist.recognizeCanvasKeyless(c, 14, 'full');
+    return res;
+  });
+
+  assert.ok(keylessRecResult && Array.isArray(keylessRecResult.myHand), 'Keyless vision engine must return myHand array');
+  assert.strictEqual(keylessRecResult.myHand.length, 14, 'Keyless vision engine must recognize 14 tiles');
+  // Check that key signature tiles (红中 31, 发财 32, 白板 33, 万子, 条子, 筒子) are accurately classified
+  assert.ok(keylessRecResult.myHand.includes(31), 'Keyless vision must accurately recognize 红中 (31)');
+  assert.ok(keylessRecResult.myHand.includes(32), 'Keyless vision must accurately recognize 发财 (32)');
+  assert.ok(keylessRecResult.myHand.includes(33), 'Keyless vision must accurately recognize 白板 (33)');
+
   await page.screenshot({ path: path.resolve(__dirname, 'test-full-table-monitor.png'), fullPage: true });
   await browser.close();
 

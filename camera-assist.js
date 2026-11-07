@@ -395,44 +395,87 @@
     return autoWatchEnabled;
   }
 
-  /* ================= Local Computer Vision Tile Analyzer (5-Zone + Hand Strip) ================= */
-  function classifySingleTilePatch(ctx, x, y, w, h) {
-    var imgData = ctx.getImageData(Math.max(0, Math.floor(x)), Math.max(0, Math.floor(y)), Math.max(1, Math.floor(w)), Math.max(1, Math.floor(h)));
+  /* ================= Keyless 36-D Spatial Template Bank + 5-Zone Vision Engine ================= */
+  var templateBank = null;
+  var templateBankPromise = null;
+
+  function extractTileFeature36(ctx, x, y, w, h) {
+    var ix = Math.max(0, Math.floor(x));
+    var iy = Math.max(0, Math.floor(y));
+    var iw = Math.max(1, Math.floor(w));
+    var ih = Math.max(1, Math.floor(h));
+    var imgData = ctx.getImageData(ix, iy, iw, ih);
     var data = imgData.data;
 
-    var padX = Math.floor(w * 0.14);
-    var padY = Math.floor(h * 0.12);
-    var innerW = Math.max(1, w - padX * 2);
-    var innerH = Math.max(1, h - padY * 2);
+    var padX = Math.floor(iw * 0.13);
+    var padY = Math.floor(ih * 0.11);
+    var innerW = Math.max(3, iw - padX * 2);
+    var innerH = Math.max(3, ih - padY * 2);
     var totalPixels = innerW * innerH;
+
+    // Auto white-balance threshold based on 75th percentile luminance inside the tile face
+    var lumSum = 0;
+    var pCount = 0;
+    for (var sy = padY; sy < ih - padY; sy += 2) {
+      for (var sx = padX; sx < iw - padX; sx += 2) {
+        var sIdx = (sy * iw + sx) * 4;
+        lumSum += (0.299 * data[sIdx] + 0.587 * data[sIdx + 1] + 0.114 * data[sIdx + 2]);
+        pCount++;
+      }
+    }
+    var avgLum = pCount > 0 ? (lumSum / pCount) : 210;
+    var bgLumThreshold = Math.min(218, Math.max(155, avgLum * 0.88));
+
+    var gridVec = new Float32Array(36); // 9 cells (3x3) * 4 channels [red, green, blue, dark]
+    var cellCounts = new Float32Array(9);
 
     var redTop = 0, redBot = 0;
     var greenTop = 0, greenBot = 0;
     var blueCount = 0;
     var darkTop = 0, darkBot = 0;
 
-    for (var py = padY; py < h - padY; py++) {
-      var isTop = py < (h * 0.52);
-      for (var px = padX; px < w - padX; px++) {
-        var idx = (py * Math.floor(w) + px) * 4;
+    for (var py = padY; py < ih - padY; py++) {
+      var relY = (py - padY) / innerH;
+      var gy = Math.min(2, Math.floor(relY * 3));
+      var isTop = relY < 0.52;
+      for (var px = padX; px < iw - padX; px++) {
+        var relX = (px - padX) / innerW;
+        var gx = Math.min(2, Math.floor(relX * 3));
+        var cellIdx = gy * 3 + gx;
+        cellCounts[cellIdx]++;
+
+        var idx = (py * iw + px) * 4;
         var r = data[idx], g = data[idx + 1], b = data[idx + 2];
         var lum = 0.299 * r + 0.587 * g + 0.114 * b;
-        if (lum > 205) continue;
+        if (lum > bgLumThreshold) continue;
 
         var maxC = Math.max(r, g, b);
         var minC = Math.min(r, g, b);
         var sat = maxC - minC;
+        var baseOffset = cellIdx * 4;
 
-        if (r > g + 28 && r > b + 28) {
+        if (r > g + 24 && r > b + 24) {
+          gridVec[baseOffset + 0]++;
           if (isTop) redTop++; else redBot++;
-        } else if (g > r + 16 && g > b + 12) {
+        } else if (g > r + 14 && g > b + 10) {
+          gridVec[baseOffset + 1]++;
           if (isTop) greenTop++; else greenBot++;
-        } else if (b > r + 18 && b > g + 6) {
+        } else if (b > r + 16 && b > g + 5) {
+          gridVec[baseOffset + 2]++;
           blueCount++;
-        } else if (lum < 115 && sat < 35) {
+        } else if (lum < bgLumThreshold * 0.65 && sat < 42) {
+          gridVec[baseOffset + 3]++;
           if (isTop) darkTop++; else darkBot++;
         }
       }
+    }
+
+    for (var c = 0; c < 9; c++) {
+      var denom = Math.max(1, cellCounts[c]);
+      gridVec[c * 4 + 0] /= denom;
+      gridVec[c * 4 + 1] /= denom;
+      gridVec[c * 4 + 2] /= denom;
+      gridVec[c * 4 + 3] /= denom;
     }
 
     var redRatio = (redTop + redBot) / totalPixels;
@@ -441,40 +484,122 @@
     var darkRatio = (darkTop + darkBot) / totalPixels;
     var inkRatio = redRatio + greenRatio + blueRatio + darkRatio;
 
-    if (inkRatio < 0.025) return 33;
+    return {
+      vec: gridVec,
+      redTop: redTop,
+      redBot: redBot,
+      greenTop: greenTop,
+      greenBot: greenBot,
+      blueCount: blueCount,
+      darkTop: darkTop,
+      darkBot: darkBot,
+      totalPixels: totalPixels,
+      redRatio: redRatio,
+      greenRatio: greenRatio,
+      blueRatio: blueRatio,
+      darkRatio: darkRatio,
+      inkRatio: inkRatio
+    };
+  }
 
-    if (redBot > redTop * 1.25 && (darkTop + blueCount * 0.5) > totalPixels * 0.015 && redRatio > 0.02) {
-      var topComplexity = (darkTop + blueCount * 0.4) / (totalPixels * 0.5);
-      var wanRank = Math.min(8, Math.max(0, Math.round((topComplexity - 0.03) / 0.024)));
-      return wanRank;
+  function ensureTemplateBank() {
+    if (templateBank) return Promise.resolve(templateBank);
+    if (templateBankPromise) return templateBankPromise;
+    if (!window.MahjongEngine || !window.MahjongEngine.faceSVG) return Promise.resolve(null);
+
+    templateBankPromise = (async function() {
+      var bank = [];
+      var c = document.createElement('canvas');
+      c.width = 48;
+      c.height = 64;
+      var ctx = c.getContext('2d');
+
+      for (var t = 0; t <= 34; t++) {
+        var svgStr = window.MahjongEngine.faceSVG(t);
+        if (svgStr.indexOf('xmlns=') < 0) {
+          svgStr = svgStr.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ');
+        }
+        var url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
+        var img = new Image();
+        await new Promise(function(resolve) {
+          img.onload = resolve;
+          img.onerror = resolve;
+          img.src = url;
+        });
+        ctx.fillStyle = '#fdfaf2';
+        ctx.fillRect(0, 0, 48, 64);
+        ctx.drawImage(img, 0, 0, 48, 64);
+        bank[t] = extractTileFeature36(ctx, 0, 0, 48, 64);
+      }
+      templateBank = bank;
+      return bank;
+    })();
+    return templateBankPromise;
+  }
+
+  function classifySingleTilePatch(ctx, x, y, w, h) {
+    var feat = extractTileFeature36(ctx, x, y, w, h);
+
+    // Center cell (gy=1, gx=1 -> cellIdx = 4) ink density
+    var centerInk = feat.vec[4 * 4 + 0] + feat.vec[4 * 4 + 1] + feat.vec[4 * 4 + 2] + feat.vec[4 * 4 + 3];
+
+    // 1. Blank / White Dragon (白板 33): either completely blank ivory OR navy rectangular frame with empty center
+    if ((feat.inkRatio < 0.025 || (centerInk < 0.012 && feat.inkRatio < 0.16)) && feat.redRatio < 0.008 && feat.greenRatio < 0.008) {
+      return 33;
     }
 
-    if (redRatio > 0.035 && greenRatio < 0.02 && blueRatio < 0.02) {
+    // 2. Pure Red Dragon (红中 31)
+    if (feat.redRatio > 0.028 && feat.greenRatio < 0.015 && feat.blueRatio < 0.015 && feat.darkRatio < 0.015) {
       return 31;
     }
 
-    if (greenRatio > 0.022 && greenRatio >= blueRatio * 1.1) {
-      if (greenRatio > 0.14 && redRatio < 0.01) return 32;
-      var bambooInk = greenRatio + redRatio * 0.8;
-      var tiaoRank = Math.min(8, Math.max(0, Math.round((bambooInk - 0.03) / 0.022)));
-      return 9 + tiaoRank;
+    // 3. 36-D Spatial Template Matching across all 0..33 tile prototypes
+    if (templateBank) {
+      var bestT = 0;
+      var bestDist = 1e9;
+      for (var t = 0; t <= 33; t++) {
+        var tRef = templateBank[t];
+        if (!tRef) continue;
+        var d = 0;
+        for (var vi = 0; vi < 36; vi++) {
+          d += Math.abs(feat.vec[vi] - tRef.vec[vi]);
+        }
+        d += Math.abs(feat.redRatio - tRef.redRatio) * 6.0;
+        d += Math.abs(feat.greenRatio - tRef.greenRatio) * 6.0;
+        d += Math.abs(feat.blueRatio - tRef.blueRatio) * 5.0;
+        d += Math.abs(feat.darkRatio - tRef.darkRatio) * 5.0;
+        if (d < bestDist) {
+          bestDist = d;
+          bestT = t;
+        }
+      }
+      return bestT;
     }
 
-    if (blueRatio > 0.018 || (blueRatio + redRatio > 0.04 && greenRatio > 0.01)) {
-      var pipInk = blueRatio + redRatio * 0.7 + greenRatio * 0.5;
-      var tongRank = Math.min(8, Math.max(0, Math.round((pipInk - 0.025) / 0.024)));
-      return 18 + tongRank;
+    // Fallback heuristic if template bank hasn't finished initializing
+    if (feat.redBot > feat.redTop * 1.25 && (feat.darkTop + feat.blueCount * 0.5) > feat.totalPixels * 0.015 && feat.redRatio > 0.02) {
+      var topComplexity = (feat.darkTop + feat.blueCount * 0.4) / (feat.totalPixels * 0.5);
+      return Math.min(8, Math.max(0, Math.round((topComplexity - 0.03) / 0.024)));
     }
-
-    if (darkRatio > 0.035) {
-      var windIdx = Math.min(3, Math.max(0, Math.floor(((darkTop - darkBot) / totalPixels + 0.04) * 35) % 4));
+    if (feat.greenRatio > 0.022 && feat.greenRatio >= feat.blueRatio * 1.1) {
+      var bambooInk = feat.greenRatio + feat.redRatio * 0.8;
+      return 9 + Math.min(8, Math.max(0, Math.round((bambooInk - 0.03) / 0.022)));
+    }
+    if (feat.blueRatio > 0.018 || (feat.blueRatio + feat.redRatio > 0.04 && feat.greenRatio > 0.01)) {
+      var pipInk = feat.blueRatio + feat.redRatio * 0.7 + feat.greenRatio * 0.5;
+      return 18 + Math.min(8, Math.max(0, Math.round((pipInk - 0.025) / 0.024)));
+    }
+    if (feat.darkRatio > 0.035) {
+      var windIdx = Math.min(3, Math.max(0, Math.floor(((feat.darkTop - feat.darkBot) / feat.totalPixels + 0.04) * 35) % 4));
       return 27 + windIdx;
     }
+    var fallbackRank = Math.min(8, Math.max(0, Math.round(feat.inkRatio * 40)));
+    return fallbackRank;
+  }
 
-    var fallbackRank = Math.min(8, Math.max(0, Math.round(inkRatio * 40)));
-    if (redBot > greenBot) return fallbackRank;
-    if (greenBot >= blueCount) return 9 + fallbackRank;
-    return 18 + fallbackRank;
+  async function recognizeCanvasKeyless(sourceCanvas, targetCount, scanMode) {
+    await ensureTemplateBank();
+    return recognizeTilesLocallyFromCanvas(sourceCanvas, targetCount, scanMode);
   }
 
   function recognizeTilesLocallyFromCanvas(sourceCanvas, targetCount, scanMode) {
@@ -482,7 +607,6 @@
     var sw = sourceCanvas.width;
     var sh = sourceCanvas.height;
 
-    // In 'full' 5-zone mode, the bottom 34% holds own hand; in 'hand' closeup mode, middle-bottom holds own hand
     var cropX = Math.floor(sw * 0.04);
     var cropW = Math.floor(sw * 0.92);
     var cropY = (scanMode === 'full') ? Math.floor(sh * 0.64) : Math.floor(sh * 0.25);
@@ -498,7 +622,7 @@
     var handResult = [];
     for (var i = 0; i < targetCount; i++) {
       var tx = i * slotW;
-      var tileCode = classifySingleTilePatch(ctx, tx, 8, slotW, workCanvas.height - 16);
+      var tileCode = classifySingleTilePatch(ctx, tx, 4, slotW, workCanvas.height - 8);
       handResult.push(tileCode);
     }
     handResult.sort(function(a, b) { return a - b; });
@@ -672,6 +796,7 @@
         }
       }
 
+      await ensureTemplateBank();
       var localRes = recognizeTilesLocallyFromCanvas(snapCanvas, targetCount, scanMode);
       if (localRes && Array.isArray(localRes.myHand) && localRes.myHand.length > 0) {
         pushUndoSnapshot();
@@ -679,7 +804,7 @@
       }
       selectedSlotIndex = -1;
       renderAssistAll();
-      setStatusText('✅ 实时识牌已刷新（手牌 ' + tableState.myHand.length + ' 张）！别人出牌或吃碰可直接在下方一键点选或语音播报');
+      setStatusText('✅ 免Key内置AI引擎识牌完成（手牌 ' + tableState.myHand.length + ' 张）！别人出牌或吃碰可在下方一键点选或语音播报');
     } finally {
       isRecognizing = false;
     }
@@ -1422,6 +1547,7 @@
       });
     }
 
+    ensureTemplateBank();
     renderAssistAll();
   }
 
@@ -1462,6 +1588,7 @@
     },
     recordSeatAction: recordSeatAction,
     executeClaimRecommendation: executeClaimRecommendation,
+    recognizeCanvasKeyless: recognizeCanvasKeyless,
     toggleAutoWatch: toggleAutoWatch,
     isAutoWatching: function() { return autoWatchEnabled; }
   };
