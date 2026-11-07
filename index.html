@@ -10,14 +10,15 @@
   <meta name="theme-color" content="#072a19" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
   <title>📷 麻将实景识牌军师 · 雀神AI辅助</title>
-  <link rel="stylesheet" href="./style.css?v=1.0.0" />
+  <link rel="stylesheet" href="./style.css?v=1.0.1" />
   <style>
     html, body {
       margin: 0;
       padding: 0;
       width: 100%;
+      height: auto !important;
       min-height: 100dvh;
-      overflow-x: hidden;
+      overflow-x: hidden !important;
       overflow-y: auto !important;
       position: static !important;
       background: radial-gradient(circle at 50% 15%, #124d30 0%, #072214 65%, #04120b 100%);
@@ -27,7 +28,7 @@
     .standalone-shell {
       max-width: 860px;
       margin: 0 auto;
-      padding: max(12px, env(safe-area-inset-top)) 12px max(24px, env(safe-area-inset-bottom)) 12px;
+      padding: max(12px, env(safe-area-inset-top)) 12px max(28px, env(safe-area-inset-bottom)) 12px;
       display: flex;
       flex-direction: column;
       gap: 12px;
@@ -57,16 +58,37 @@
       color: var(--text-muted);
     }
     .assist-viewfinder {
-      min-height: 160px !important;
+      min-height: 165px !important;
       max-height: 220px !important;
+    }
+    .assist-camera-placeholder {
+      padding-bottom: 24px !important;
+    }
+    .assist-hand-row {
+      justify-content: center !important;
+      flex-wrap: wrap !important;
+      gap: 4px !important;
+      padding: 8px 4px 4px 4px !important;
+    }
+    .assist-slot-wrap .mj-tile.assist-hand-tile {
+      width: clamp(23px, calc((100vw - 88px) / 14.2), 42px) !important;
+      height: calc(clamp(23px, calc((100vw - 88px) / 14.2), 42px) * 1.36) !important;
+    }
+    .assist-pal-tiles {
+      flex-wrap: wrap !important;
+      gap: 4px !important;
+    }
+    .assist-pal-item .mj-tile.small-pal-tile {
+      width: clamp(26px, 6.8vw, 34px) !important;
+      height: calc(clamp(26px, 6.8vw, 34px) * 1.35) !important;
     }
     @media (max-width: 680px) {
       .assist-top-grid {
         grid-template-columns: 1fr !important;
       }
       .assist-viewfinder {
-        min-height: 150px !important;
-        max-height: 190px !important;
+        min-height: 155px !important;
+        max-height: 195px !important;
       }
     }
   </style>
