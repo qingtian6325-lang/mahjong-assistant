@@ -966,8 +966,478 @@
     return { act: 'pass', couldHu: options.canHu };
   }
 
-  /* ================= Real-Life Camera Assistant Hand Analyzer (实景识牌军师深度分析) ================= */
-  function analyzeAssistantHand(hand, meldCount, visibleCounts) {
+  /* ================= Real-Life Camera Assistant Hand & Full-Table Analyzer (实景识牌军师全局深度分析) ================= */
+  var SEAT_LABELS = {
+    bottom: '自家',
+    right: '下家',
+    top: '对家',
+    left: '上家'
+  };
+
+  var SUIT_LABELS = ['万子', '条子', '筒子', '字牌'];
+
+  function computeVisibleCounts(tableState) {
+    var visible = new Array(35).fill(0);
+    var tableOnly = new Array(35).fill(0);
+    var discardedSet = {};
+
+    if (tableState && Array.isArray(tableState.myHand)) {
+      for (var i = 0; i < tableState.myHand.length; i++) {
+        var ht = tableState.myHand[i];
+        if (ht >= 0 && ht <= 34) visible[ht]++;
+      }
+    }
+
+    var seats = (tableState && tableState.seats) ? tableState.seats : {};
+    var seatKeys = ['bottom', 'right', 'top', 'left'];
+    for (var s = 0; s < seatKeys.length; s++) {
+      var seatObj = seats[seatKeys[s]];
+      if (!seatObj) continue;
+      if (Array.isArray(seatObj.melds)) {
+        for (var m = 0; m < seatObj.melds.length; m++) {
+          var meld = seatObj.melds[m];
+          var mTiles = Array.isArray(meld) ? meld : (meld && Array.isArray(meld.tiles) ? meld.tiles : []);
+          for (var mt = 0; mt < mTiles.length; mt++) {
+            var tc = mTiles[mt];
+            if (tc >= 0 && tc <= 34) {
+              visible[tc]++;
+              tableOnly[tc]++;
+            }
+          }
+        }
+      }
+      if (Array.isArray(seatObj.discards)) {
+        for (var d = 0; d < seatObj.discards.length; d++) {
+          var dc = seatObj.discards[d];
+          if (dc >= 0 && dc <= 34) {
+            visible[dc]++;
+            tableOnly[dc]++;
+            discardedSet[dc] = (discardedSet[dc] || 0) + 1;
+          }
+        }
+      }
+    }
+
+    var remaining = new Array(35).fill(0);
+    for (var t = 0; t <= 34; t++) {
+      visible[t] = Math.min(4, Math.max(0, visible[t]));
+      tableOnly[t] = Math.min(4, Math.max(0, tableOnly[t]));
+      remaining[t] = Math.max(0, 4 - visible[t]);
+    }
+
+    return {
+      visible: visible,
+      tableOnly: tableOnly,
+      remaining: remaining,
+      discardedSet: discardedSet
+    };
+  }
+
+  function tileSuitGroup(t) {
+    if (t < 9) return 0;   // 万
+    if (t < 18) return 1;  // 条
+    if (t < 27) return 2;  // 筒
+    return 3;              // 字
+  }
+
+  function analyzeOpponentThreats(tableState, visibleCounts) {
+    var vis = visibleCounts || new Array(35).fill(0);
+    var seats = (tableState && tableState.seats) ? tableState.seats : {};
+    var oppKeys = ['left', 'top', 'right'];
+    var seatProfiles = {};
+
+    for (var idx = 0; idx < oppKeys.length; idx++) {
+      var key = oppKeys[idx];
+      var sObj = seats[key] || { melds: [], discards: [] };
+      var melds = Array.isArray(sObj.melds) ? sObj.melds : [];
+      var discards = Array.isArray(sObj.discards) ? sObj.discards : [];
+
+      var meldSuits = [0, 0, 0, 0];
+      var pengGangCount = 0;
+      for (var m = 0; m < melds.length; m++) {
+        var mItem = melds[m];
+        var mTiles = Array.isArray(mItem) ? mItem : (mItem && Array.isArray(mItem.tiles) ? mItem.tiles : []);
+        var mType = (mItem && mItem.type) ? mItem.type : '';
+        if (mType === 'peng' || mType === 'gang' || (mTiles.length >= 3 && mTiles[0] === mTiles[1])) {
+          pengGangCount++;
+        }
+        if (mTiles.length > 0 && mTiles[0] >= 0 && mTiles[0] <= 33) {
+          meldSuits[tileSuitGroup(mTiles[0])]++;
+        }
+      }
+
+      var discardSuits = [0, 0, 0, 0];
+      var safeMap = {};
+      for (var d = 0; d < discards.length; d++) {
+        var dt = discards[d];
+        if (dt >= 0 && dt <= 33) {
+          discardSuits[tileSuitGroup(dt)]++;
+          safeMap[dt] = true;
+        }
+      }
+
+      var focusedSuit = -1;
+      for (var sg = 0; sg < 3; sg++) {
+        if (meldSuits[sg] >= 2 && discardSuits[sg] <= 1) {
+          focusedSuit = sg;
+          break;
+        }
+        if (meldSuits[sg] >= 1 && discards.length >= 4 && discardSuits[sg] === 0) {
+          focusedSuit = sg;
+          break;
+        }
+      }
+
+      var warning = '🟢 牌路常规';
+      var threatLevel = 'low';
+      if (melds.length >= 3) {
+        threatLevel = 'high';
+        warning = '🚨 已' + melds.length + '副露（极可能已听牌）' + (focusedSuit >= 0 ? '·主攻【' + SUIT_LABELS[focusedSuit] + '】' : '');
+      } else if (focusedSuit >= 0) {
+        threatLevel = 'high';
+        warning = '⚠️ ' + melds.length + '副露且少打【' + SUIT_LABELS[focusedSuit] + '】·疑似做' + SUIT_LABELS[focusedSuit] + '大牌';
+      } else if (pengGangCount >= 2) {
+        threatLevel = 'medium';
+        warning = '⚠️ 已碰/杠' + pengGangCount + '副·警惕对对胡/双碰听牌';
+      } else if (melds.length > 0) {
+        threatLevel = 'medium';
+        warning = '🟡 已' + melds.length + '副露·注意生张';
+      } else if (discards.length >= 8) {
+        threatLevel = 'medium';
+        warning = '🟡 舍牌较多·警惕门清立直/默听';
+      }
+
+      seatProfiles[key] = {
+        seat: key,
+        seatName: SEAT_LABELS[key],
+        meldCount: melds.length,
+        discardCount: discards.length,
+        focusedSuit: focusedSuit,
+        pengGangCount: pengGangCount,
+        threatLevel: threatLevel,
+        warning: warning,
+        safeMap: safeMap
+      };
+    }
+
+    var dangerByTile = {};
+    for (var t = 0; t <= 34; t++) {
+      if (t === WILD) {
+        dangerByTile[t] = { level: 'safe', label: '🌟 百搭王牌', penalty: 0, reasons: [] };
+        continue;
+      }
+      var rem = Math.max(0, 4 - (vis[t] || 0));
+      var reasons = [];
+      var riskPoints = 0;
+      var sgIdx = tileSuitGroup(t);
+
+      // Check against each opponent
+      for (var ok = 0; ok < oppKeys.length; ok++) {
+        var prof = seatProfiles[oppKeys[ok]];
+        if (prof.safeMap[t]) continue; // Genbutsu (现物) against this seat
+
+        if (prof.focusedSuit === sgIdx) {
+          riskPoints += (prof.meldCount >= 2 ? 16 : 11);
+          reasons.push(prof.seatName + '主攻' + SUIT_LABELS[sgIdx]);
+        } else if (prof.meldCount >= 3) {
+          riskPoints += 10;
+          reasons.push(prof.seatName + '3副露听牌期');
+        } else if (prof.pengGangCount >= 2 && rem >= 2) {
+          riskPoints += 6;
+        }
+      }
+
+      // Middle tiles (3..7) are more dangerous for sequences than terminals/honors
+      if (t < 27) {
+        var r = t % 9;
+        if (r >= 2 && r <= 6 && (vis[t] || 0) <= 1 && riskPoints > 0) {
+          riskPoints += 5;
+        } else if ((r === 0 || r === 8) && riskPoints < 10) {
+          riskPoints -= 3;
+        }
+      } else {
+        // Honor tile
+        if ((vis[t] || 0) >= 3) {
+          riskPoints -= 8; // Dead/last honor is safe
+        } else if ((vis[t] || 0) === 1 && riskPoints > 0) {
+          riskPoints += 4; // Live honor with only 1 in hand
+        }
+      }
+
+      var anyOpponentDiscarded = seatProfiles.left.safeMap[t] || seatProfiles.top.safeMap[t] || seatProfiles.right.safeMap[t];
+      var level = 'medium';
+      var label = '🟡 普通生张';
+      var penalty = 0;
+
+      if (riskPoints >= 14) {
+        level = 'high';
+        label = '🚨 点炮高危（' + (reasons[0] || '对手听牌生张') + '）';
+        penalty = -16;
+      } else if ((vis[t] || 0) >= 4 || (t >= 27 && (vis[t] || 0) >= 3) || (anyOpponentDiscarded && riskPoints <= 4)) {
+        level = 'safe';
+        label = '🛡️ 熟张安全';
+        penalty = 6;
+      } else if (riskPoints <= 2 && (t >= 27 || t % 9 === 0 || t % 9 === 8 || anyOpponentDiscarded)) {
+        level = 'low';
+        label = '🟢 相对安全';
+        penalty = 3;
+      } else {
+        level = 'medium';
+        label = '🟡 普通生张';
+        penalty = 0;
+      }
+
+      dangerByTile[t] = {
+        level: level,
+        label: label,
+        penalty: penalty,
+        reasons: reasons
+      };
+    }
+
+    return {
+      seats: seatProfiles,
+      dangerByTile: dangerByTile
+    };
+  }
+
+  function evaluateOpponentDiscardClaim(hand, meldCount, discardedTile, fromSeat, visibleCounts, dangerByTile) {
+    hand = (hand || []).slice().sort(function(a, b) { return a - b; });
+    meldCount = meldCount || Math.max(0, Math.floor((13 - hand.length) / 3));
+    var seatName = SEAT_LABELS[fromSeat] || '对手';
+    var tName = tileName(discardedTile);
+    var vis = visibleCounts || new Array(35).fill(0);
+
+    var result = {
+      tile: discardedTile,
+      tileName: tName,
+      fromSeat: fromSeat,
+      fromSeatName: seatName,
+      canHu: false,
+      canGang: false,
+      canPeng: false,
+      canChi: false,
+      recommendedAction: 'pass',
+      recommendedMeld: null,
+      discardAfter: null,
+      discardAfterName: null,
+      headline: '',
+      reason: '',
+      options: []
+    };
+
+    if (discardedTile === undefined || discardedTile === null || discardedTile < 0 || discardedTile > 33) {
+      return result;
+    }
+
+    // Current baseline 13-tile evaluation (Pass)
+    var o = countsOf(hand);
+    var curTing = analyzeTing(hand, meldCount, vis);
+    var curWaits = curTing['current'] || [];
+    var curTingRem = 0;
+    for (var cw = 0; cw < curWaits.length; cw++) curTingRem += curWaits[cw].remaining;
+    var curScore = evaluate13TileHand(o.c.slice(), o.w, meldCount, vis);
+
+    // 1. Check Hu (点炮胡)
+    if (hand.length % 3 === 1 && canWinWithTile(hand, meldCount, discardedTile)) {
+      result.canHu = true;
+      result.recommendedAction = 'hu';
+      result.headline = '🔥 强烈建议【胡牌】！' + seatName + '打出【' + tName + '】点炮！';
+      result.reason = '当前手牌加【' + tName + '】已构成完整胡牌牌型，直接推倒胡牌！';
+      result.options.push({ action: 'hu', label: '胡【' + tName + '】', score: 99999 });
+      return result;
+    }
+
+    if (hand.length % 3 !== 1) {
+      result.headline = 'ℹ️ 当前手牌为 ' + hand.length + ' 张（非等摸/可鸣牌状态）';
+      return result;
+    }
+
+    var copiesInHand = 0;
+    for (var i = 0; i < hand.length; i++) {
+      if (hand[i] === discardedTile) copiesInHand++;
+    }
+
+    function simulateMeldAndDiscard(removeTiles) {
+      var simHand = hand.slice();
+      for (var r = 0; r < removeTiles.length; r++) {
+        var idx = simHand.indexOf(removeTiles[r]);
+        if (idx >= 0) simHand.splice(idx, 1);
+      }
+      var newMeldCount = meldCount + 1;
+      var simPlayer = { hand: simHand, melds: new Array(newMeldCount), forbiddenDiscard: discardedTile };
+      var bestDiscard = aiChooseDiscard(simPlayer, { visibleCounts: vis, forbiddenDiscard: discardedTile });
+      if (bestDiscard === discardedTile && simHand.length > 1) {
+        for (var k = 0; k < simHand.length; k++) {
+          if (simHand[k] !== discardedTile) {
+            bestDiscard = simHand[k];
+            break;
+          }
+        }
+      }
+      var afterHand = simHand.slice();
+      var dIdx = afterHand.indexOf(bestDiscard);
+      if (dIdx >= 0) afterHand.splice(dIdx, 1);
+
+      var afterO = countsOf(afterHand);
+      var afterTing = analyzeTing(afterHand, newMeldCount, vis);
+      var afterWaits = afterTing['current'] || [];
+      var afterTingRem = 0;
+      for (var sw = 0; sw < afterWaits.length; sw++) afterTingRem += afterWaits[sw].remaining;
+      var afterScore = evaluate13TileHand(afterO.c, afterO.w, newMeldCount, vis);
+      var dangerInfo = (dangerByTile && dangerByTile[bestDiscard]) ? dangerByTile[bestDiscard] : null;
+      if (dangerInfo && dangerInfo.penalty) afterScore += dangerInfo.penalty;
+
+      return {
+        discardAfter: bestDiscard,
+        discardAfterName: tileName(bestDiscard),
+        tingRem: afterTingRem,
+        tingWaits: afterWaits,
+        score: afterScore
+      };
+    }
+
+    var bestOption = {
+      action: 'pass',
+      meld: null,
+      discardAfter: null,
+      discardAfterName: null,
+      tingRem: curTingRem,
+      score: curScore + 8, // Slight threshold bias to preserve concealed hand unless claiming clearly improves
+      desc: '保持门清结构与摸牌机会'
+    };
+
+    // 2. Check Gang (明杠)
+    if (copiesInHand >= 3) {
+      result.canGang = true;
+      var gangScore = curScore + 38;
+      result.options.push({
+        action: 'gang',
+        meld: [discardedTile, discardedTile, discardedTile, discardedTile],
+        label: '杠【' + tName + '】',
+        score: Math.round(gangScore)
+      });
+      if (curTingRem < 4 && gangScore > bestOption.score) {
+        bestOption = {
+          action: 'gang',
+          meld: [discardedTile, discardedTile, discardedTile, discardedTile],
+          discardAfter: null,
+          discardAfterName: null,
+          tingRem: curTingRem,
+          score: gangScore,
+          desc: '明杠直接锁定杠分并补摸一张牌'
+        };
+      }
+    }
+
+    // 3. Check Peng (碰 - allowed from left, top, right)
+    if (copiesInHand >= 2) {
+      result.canPeng = true;
+      var pengSim = simulateMeldAndDiscard([discardedTile, discardedTile]);
+      var pengTotalMetric = (pengSim.tingRem > 0 ? 1000 + pengSim.tingRem * 120 : 0) + pengSim.score;
+      var curTotalMetric = (curTingRem > 0 ? 1000 + curTingRem * 120 : 0) + curScore + 10;
+
+      result.options.push({
+        action: 'peng',
+        meld: [discardedTile, discardedTile, discardedTile],
+        discardAfter: pengSim.discardAfter,
+        discardAfterName: pengSim.discardAfterName,
+        tingRem: pengSim.tingRem,
+        label: '碰【' + tName + '】打【' + pengSim.discardAfterName + '】',
+        score: Math.round(pengTotalMetric)
+      });
+
+      if (pengTotalMetric > curTotalMetric) {
+        bestOption = {
+          action: 'peng',
+          meld: [discardedTile, discardedTile, discardedTile],
+          discardAfter: pengSim.discardAfter,
+          discardAfterName: pengSim.discardAfterName,
+          tingRem: pengSim.tingRem,
+          tingWaits: pengSim.tingWaits,
+          score: pengTotalMetric,
+          desc: pengSim.tingRem > 0
+            ? ('碰后打【' + pengSim.discardAfterName + '】直接进入听牌（共剩 ' + pengSim.tingRem + ' 张可胡）')
+            : ('碰出刻子提速，碰后建议打出【' + pengSim.discardAfterName + '】')
+        };
+      }
+    }
+
+    // 4. Check Chi (吃 - ONLY allowed when fromSeat === 'left' 上家)
+    if (fromSeat === 'left' && discardedTile < 27) {
+      var chiList = findChiOptions(hand, discardedTile);
+      if (chiList.length > 0) {
+        result.canChi = true;
+        for (var cIdx = 0; cIdx < chiList.length; cIdx++) {
+          var cMeld = chiList[cIdx];
+          var partnerTiles = cMeld.slice();
+          var pIdx = partnerTiles.indexOf(discardedTile);
+          if (pIdx >= 0) partnerTiles.splice(pIdx, 1);
+
+          var chiSim = simulateMeldAndDiscard(partnerTiles);
+          var chiMetric = (chiSim.tingRem > 0 ? 1000 + chiSim.tingRem * 120 : 0) + chiSim.score;
+          var baseMetric = (bestOption.tingRem > 0 ? 1000 + bestOption.tingRem * 120 : 0) + bestOption.score;
+
+          var partnerStr = partnerTiles.map(tileName).join('+');
+          result.options.push({
+            action: 'chi',
+            meld: cMeld,
+            partnerTiles: partnerTiles,
+            discardAfter: chiSim.discardAfter,
+            discardAfterName: chiSim.discardAfterName,
+            tingRem: chiSim.tingRem,
+            label: '用【' + partnerStr + '】吃【' + tName + '】→ 打【' + chiSim.discardAfterName + '】',
+            score: Math.round(chiMetric)
+          });
+
+          if (chiMetric > baseMetric + 4) {
+            bestOption = {
+              action: 'chi',
+              meld: cMeld,
+              partnerTiles: partnerTiles,
+              discardAfter: chiSim.discardAfter,
+              discardAfterName: chiSim.discardAfterName,
+              tingRem: chiSim.tingRem,
+              tingWaits: chiSim.tingWaits,
+              score: chiMetric,
+              desc: chiSim.tingRem > 0
+                ? ('用【' + partnerStr + '】吃后打【' + chiSim.discardAfterName + '】直接听牌（剩 ' + chiSim.tingRem + ' 张）')
+                : ('用【' + partnerStr + '】吃进成顺，吃完建议打【' + chiSim.discardAfterName + '】')
+            };
+          }
+        }
+      }
+    }
+
+    result.recommendedAction = bestOption.action;
+    result.recommendedMeld = bestOption.meld;
+    result.discardAfter = bestOption.discardAfter;
+    result.discardAfterName = bestOption.discardAfterName;
+
+    if (bestOption.action === 'peng') {
+      result.headline = '⚡ 建议【碰】' + seatName + '的【' + tName + '】 → 随后打【' + bestOption.discardAfterName + '】';
+      result.reason = bestOption.desc;
+    } else if (bestOption.action === 'chi') {
+      var pNames = (bestOption.partnerTiles || []).map(tileName).join('+');
+      result.headline = '⚡ 建议用【' + pNames + '】吃上家的【' + tName + '】 → 随后打【' + bestOption.discardAfterName + '】';
+      result.reason = bestOption.desc;
+    } else if (bestOption.action === 'gang') {
+      result.headline = '⚡ 建议【明杠】' + seatName + '的【' + tName + '】！';
+      result.reason = bestOption.desc;
+    } else {
+      if (result.canPeng || result.canChi || result.canGang) {
+        result.headline = '✋ 建议【过（不吃不碰）】' + seatName + '打出的【' + tName + '】';
+        result.reason = '鸣牌会拆散现有好搭或收窄进张，保留门清摸牌效率更高。';
+      } else {
+        result.headline = '👀 ' + seatName + '打出【' + tName + '】（无可吃碰，轮转跟进）';
+        result.reason = '全桌已自动扣减【' + tName + '】剩余张数。';
+      }
+    }
+
+    return result;
+  }
+
+  function analyzeAssistantHand(hand, meldCount, visibleCounts, dangerByTile) {
     hand = (hand || []).slice().sort(function(a, b) { return a - b; });
     meldCount = meldCount || Math.max(0, Math.floor((14 - hand.length) / 3));
     var o = countsOf(hand);
@@ -1035,19 +1505,25 @@
         });
 
         var safety = tileSafetyAdjustment(dTile, o.c, { visibleCounts: vis });
+        var dangerObj = (dangerByTile && dangerByTile[dTile]) ? dangerByTile[dTile] : {
+          level: safety >= 4 ? 'safe' : 'medium',
+          label: safety >= 4 ? '🛡️ 熟张/端牌安全' : '🟡 普通生张',
+          penalty: 0
+        };
+
         var rankScore = (dTile === WILD ? -9999 : 0) +
           (tingRem > 0 ? (10000 + tingRem * 150 + waits.length * 25) : 0) +
-          baseVal * 2.2 + effTotal * 7.5 + safety;
+          baseVal * 2.2 + effTotal * 7.5 + safety + (dangerObj.penalty || 0);
 
         var reason = '';
         if (dTile === WILD) {
           reason = '⚠️ 万能「飛」牌，强烈建议保留作百搭！';
         } else if (tingRem > 0) {
           var wNames = waits.slice(0, 5).map(function(w) { return w.name; }).join('、');
-          reason = '🔥 打出后直接【听牌】！可胡 ' + wNames + (waits.length > 5 ? ' 等' : '') + '（共剩 ' + tingRem + ' 张）';
+          reason = '🔥 打出后直接【听牌】！可胡 ' + wNames + (waits.length > 5 ? ' 等' : '') + '（全桌共剩 ' + tingRem + ' 张）';
         } else {
           var kindDesc = (dTile >= 27) ? '清理孤张字牌' : ((dTile % 9 === 0 || dTile % 9 === 8) ? '处理边张幺九' : '优化搭子效率');
-          reason = '💡 ' + kindDesc + '，保留最优面子结构，有效进张 ' + effDraws.length + ' 种（共 ' + effTotal + ' 张）';
+          reason = '💡 ' + kindDesc + '，保留最优面子结构，有效进张 ' + effDraws.length + ' 种（全桌共剩 ' + effTotal + ' 张）';
         }
 
         candidates.push({
@@ -1059,6 +1535,8 @@
           effectiveDraws: effDraws.slice(0, 8),
           effectiveKindCount: effDraws.length,
           effectiveTotal: effTotal,
+          dangerLevel: dangerObj.level,
+          dangerLabel: dangerObj.label,
           score: Math.round(rankScore),
           reason: reason
         });
@@ -1105,6 +1583,74 @@
     return res;
   }
 
+  function analyzeFullTable(tableState) {
+    tableState = tableState || { myHand: [], seats: {} };
+    var myHand = Array.isArray(tableState.myHand) ? tableState.myHand.slice() : [];
+    var myMelds = (tableState.seats && tableState.seats.bottom && Array.isArray(tableState.seats.bottom.melds))
+      ? tableState.seats.bottom.melds
+      : [];
+    var meldCount = myMelds.length > 0 ? myMelds.length : Math.max(0, Math.floor((14 - myHand.length) / 3));
+
+    var vc = computeVisibleCounts(tableState);
+    var threats = analyzeOpponentThreats(tableState, vc.visible);
+    var handAnalysis = analyzeAssistantHand(myHand, meldCount, vc.tableOnly, threats.dangerByTile);
+
+    var deadTiles = [];
+    for (var t = 0; t < 34; t++) {
+      if (vc.remaining[t] === 0) deadTiles.push(t);
+    }
+
+    var claimAdvice = null;
+    var ev = tableState.latestEvent;
+    if (ev && ev.type === 'discard' && (ev.seat === 'left' || ev.seat === 'top' || ev.seat === 'right')) {
+      claimAdvice = evaluateOpponentDiscardClaim(
+        myHand,
+        meldCount,
+        ev.tile,
+        ev.seat,
+        vc.visible,
+        threats.dangerByTile
+      );
+    }
+
+    var voiceSummary = '';
+    if (handAnalysis.isHu) {
+      voiceSummary = '手牌已胡牌！';
+    } else if (claimAdvice && claimAdvice.recommendedAction !== 'pass') {
+      if (claimAdvice.recommendedAction === 'hu') {
+        voiceSummary = claimAdvice.fromSeatName + '打' + claimAdvice.tileName + '，直接胡牌！';
+      } else if (claimAdvice.recommendedAction === 'peng') {
+        voiceSummary = '建议碰' + claimAdvice.tileName + '，打' + claimAdvice.discardAfterName;
+      } else if (claimAdvice.recommendedAction === 'chi') {
+        voiceSummary = '建议吃' + claimAdvice.tileName + '，打' + claimAdvice.discardAfterName;
+      } else if (claimAdvice.recommendedAction === 'gang') {
+        voiceSummary = '建议杠' + claimAdvice.tileName;
+      }
+    } else if (handAnalysis.mode === 'discard' && handAnalysis.recommendations.length > 0) {
+      var topRec = handAnalysis.recommendations[0];
+      if (topRec.isTing) {
+        var waitStr = topRec.tingWaits.slice(0, 3).map(function(w) { return w.name; }).join('、');
+        voiceSummary = '建议打' + topRec.name + '，听' + waitStr + '，剩' + topRec.tingTotal + '张';
+      } else {
+        voiceSummary = '建议打' + topRec.name + '，有效进张' + topRec.effectiveTotal + '张';
+      }
+    } else if (handAnalysis.mode === 'draw' && handAnalysis.isTing) {
+      var curWaitStr = handAnalysis.tingWaits.slice(0, 3).map(function(w) { return w.name; }).join('、');
+      voiceSummary = '当前已听' + curWaitStr + '，共剩' + handAnalysis.tingTotal + '张';
+    }
+
+    return {
+      visibleCounts: vc.visible,
+      tableOnlyCounts: vc.tableOnly,
+      remainingByTile: vc.remaining,
+      deadTiles: deadTiles,
+      opponentThreats: threats,
+      claimAdvice: claimAdvice,
+      handAnalysis: handAnalysis,
+      voiceSummary: voiceSummary
+    };
+  }
+
   window.MahjongEngine = {
     WILD: WILD,
     HONORS: HONORS,
@@ -1129,6 +1675,10 @@
     findKongs: findKongs,
     aiChooseDiscard: aiChooseDiscard,
     aiDecideClaim: aiDecideClaim,
-    analyzeAssistantHand: analyzeAssistantHand
+    computeVisibleCounts: computeVisibleCounts,
+    analyzeOpponentThreats: analyzeOpponentThreats,
+    evaluateOpponentDiscardClaim: evaluateOpponentDiscardClaim,
+    analyzeAssistantHand: analyzeAssistantHand,
+    analyzeFullTable: analyzeFullTable
   };
 })();
