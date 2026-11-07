@@ -83,3 +83,89 @@ const invalidRes = E.analyzeFullTable(invalidHandState);
 assert.strictEqual(invalidRes.visibleCounts[5], 1, 'Tracks visible counts even when hand length is invalid');
 
 console.log('ALL ENGINE UNIT TESTS PASSED');
+
+// ================= E2E Browser Tests (Playwright) =================
+(async () => {
+  console.log('\n=== [E2E TESTS] Real-Time Full-Table Mahjong Monitor UI ===');
+  const path = require('path');
+  let chromium;
+  try {
+    chromium = require('playwright-core').chromium;
+  } catch (e) {
+    chromium = require(path.resolve(__dirname, '../elegant-babbage/node_modules/playwright-core')).chromium;
+  }
+
+  const browser = await chromium.launch({
+    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+  });
+  const page = await browser.newPage({ viewport: { width: 430, height: 1180 } });
+
+  const pageErrors = [];
+  page.on('pageerror', err => pageErrors.push(err.message));
+
+  const indexUrl = 'file:///' + path.resolve(__dirname, 'index.html').replace(/\\/g, '/');
+  await page.goto(indexUrl);
+  await page.waitForTimeout(300);
+
+  // 1. Check Auto-Watch button, 5-zone overlay, and 4-seat sandbox exist
+  const hasAutoWatchBtn = await page.locator('#btnAssistAutoWatch').count();
+  assert.strictEqual(hasAutoWatchBtn, 1, '#btnAssistAutoWatch must exist');
+
+  const hasZoneOverlay = await page.locator('#assistZoneOverlay').count();
+  assert.strictEqual(hasZoneOverlay, 1, '#assistZoneOverlay 5-zone tactical grid must exist');
+
+  const hasSandbox = await page.locator('#assistTableSandbox').count();
+  assert.strictEqual(hasSandbox, 1, '#assistTableSandbox 4-seat board must exist');
+
+  // 2. Toggle Auto-Watch mode on & verify state indicator updates without throwing
+  await page.click('#btnAssistAutoWatch');
+  await page.waitForTimeout(150);
+  const watchActive = await page.evaluate(() => window.MahjongCameraAssist.isAutoWatching());
+  assert.strictEqual(watchActive, true, 'Auto-watch should be active after clicking #btnAssistAutoWatch');
+
+  // 3. Test 13-tile hand + recording opponent actions ("上家打三万", "下家碰红中")
+  await page.evaluate(() => {
+    window.MahjongCameraAssist.setTableState({
+      myHand: [0, 1, 6, 8, 9, 10, 11, 18, 19, 20, 27, 27, 31],
+      seats: {
+        bottom: { melds: [], discards: [] },
+        right:  { melds: [{ type: 'peng', tiles: [31, 31, 31] }], discards: [8] },
+        top:    { melds: [], discards: [28] },
+        left:   { melds: [], discards: [] }
+      },
+      latestEvent: null
+    });
+  });
+  await page.waitForTimeout(150);
+
+  // Select target mode: "⬅️ 上家打牌" and tap "三万" (tile 2) in palette
+  await page.click('[data-target-mode="left-discard"]');
+  await page.click('.assist-pal-item[data-ptile="2"]');
+  await page.waitForTimeout(150);
+
+  // Verify claim banner appears recommending Chi on 三万!
+  const claimBannerText = await page.locator('#assistClaimBanner').innerText();
+  assert.ok(claimBannerText.includes('三万'), 'Claim banner should mention 三万');
+  assert.ok(claimBannerText.includes('吃'), 'Claim banner should advise Chi for 上家打三万');
+
+  // Verify remaining badge on 红中 (tile 31): 1 in myHand + 3 in right.melds = 4 visible -> 剩0
+  const hongzhongRemText = await page.locator('.assist-pal-item[data-ptile="31"] .pal-rem-badge').innerText();
+  assert.ok(hongzhongRemText.includes('0') || hongzhongRemText.includes('绝'), '红中 should show 0 remaining / 绝张');
+
+  // 4. Click "⚡ 一键执行推荐动作" (#btnExecuteClaim) and verify meld is added to bottom seat & hand updates to 10 tiles
+  await page.click('#btnExecuteClaim');
+  await page.waitForTimeout(150);
+  const afterClaimState = await page.evaluate(() => window.MahjongCameraAssist.getTableState());
+  assert.strictEqual(afterClaimState.seats.bottom.melds.length, 1, 'Bottom seat should now have 1 meld after executing Chi');
+  assert.strictEqual(afterClaimState.myHand.length, 10, 'My hand should have 10 tiles after Chi + auto-discard');
+
+  // 5. Load 4-seat Demo Game (#btnAssistDemoHand) to verify full-table claim banner + threat badges visually
+  await page.click('#btnAssistDemoHand');
+  await page.waitForTimeout(150);
+  await page.screenshot({ path: path.resolve(__dirname, 'test-full-table-monitor.png'), fullPage: true });
+  await browser.close();
+
+  assert.strictEqual(pageErrors.length, 0, 'Zero page errors expected, got: ' + pageErrors.join('; '));
+  console.log('ALL E2E UI TESTS PASSED');
+})();
+

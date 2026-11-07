@@ -6,11 +6,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="麻将识牌军师" />
+  <meta name="apple-mobile-web-app-title" content="麻将全局盯盘军师" />
   <meta name="theme-color" content="#072a19" />
   <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-  <title>📷 麻将实景识牌军师 · 雀神AI辅助</title>
-  <link rel="stylesheet" href="./style.css?v=1.0.1" />
+  <title>📷 麻将全局实时盯盘军师 · 四家吃碰舍牌 & 雀神AI攻防辅助</title>
+  <link rel="stylesheet" href="./style.css?v=2.0.0" />
   <style>
     html, body {
       margin: 0;
@@ -21,17 +21,17 @@
       overflow-x: hidden !important;
       overflow-y: auto !important;
       position: static !important;
-      background: radial-gradient(circle at 50% 15%, #124d30 0%, #072214 65%, #04120b 100%);
+      background: radial-gradient(circle at 50% 10%, #124d30 0%, #072214 65%, #04120b 100%);
       color: #fdfdfd;
       font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
     }
     .standalone-shell {
-      max-width: 860px;
+      max-width: 920px;
       margin: 0 auto;
-      padding: max(12px, env(safe-area-inset-top)) 12px max(28px, env(safe-area-inset-bottom)) 12px;
+      padding: max(10px, env(safe-area-inset-top)) 10px max(32px, env(safe-area-inset-bottom)) 10px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
     .standalone-header {
       display: flex;
@@ -39,30 +39,335 @@
       justify-content: space-between;
       flex-wrap: wrap;
       gap: 8px;
-      background: rgba(8, 24, 16, 0.92);
-      border: 1.5px solid rgba(212, 175, 55, 0.5);
-      border-radius: 16px;
-      padding: 10px 16px;
+      background: rgba(8, 24, 16, 0.94);
+      border: 1.5px solid rgba(212, 175, 55, 0.55);
+      border-radius: 14px;
+      padding: 10px 14px;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
     }
     .standalone-brand {
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 900;
       color: var(--gold-light);
     }
     .standalone-sub {
       font-size: 12px;
-      color: var(--text-muted);
+      color: #b7e4c7;
+      margin-top: 2px;
     }
     .assist-viewfinder {
-      min-height: 165px !important;
-      max-height: 220px !important;
+      position: relative;
+      min-height: 185px !important;
+      max-height: 240px !important;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .assist-watch-pill {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      z-index: 6;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      background: rgba(0, 0, 0, 0.72);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #e2e8f0;
+      pointer-events: none;
+    }
+    .assist-watch-pill.watching {
+      background: rgba(185, 28, 28, 0.88);
+      border-color: #fca5a5;
+      color: #fff;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.65);
+    }
+    .watch-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+    .assist-watch-pill.watching .watch-dot {
+      background: #fef08a;
+      animation: pulseDot 1s infinite alternate;
+    }
+    @keyframes pulseDot {
+      from { transform: scale(0.85); opacity: 0.6; }
+      to { transform: scale(1.25); opacity: 1; }
+    }
+    /* 5-Zone Tactical Camera Overlay */
+    .assist-zone-overlay {
+      position: absolute;
+      inset: 32px 6px 6px 6px;
+      z-index: 4;
+      display: grid;
+      grid-template-columns: 22% 1fr 22%;
+      grid-template-rows: 26% 1fr 34%;
+      gap: 3px;
+      pointer-events: none;
+    }
+    .zone-box {
+      border: 1px dashed rgba(212, 175, 55, 0.55);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      color: rgba(255, 235, 160, 0.88);
+      background: rgba(0, 0, 0, 0.14);
+      text-shadow: 0 1px 2px #000;
+      text-align: center;
+      padding: 2px;
+    }
+    .zone-top { grid-column: 1 / 4; grid-row: 1; }
+    .zone-left { grid-column: 1; grid-row: 2; }
+    .zone-center { grid-column: 2; grid-row: 2; border-color: rgba(52, 211, 153, 0.6); color: #a7f3d0; }
+    .zone-right { grid-column: 3; grid-row: 2; }
+    .zone-bottom {
+      grid-column: 1 / 4;
+      grid-row: 3;
+      border: 1.5px dashed rgba(250, 204, 21, 0.85);
+      background: rgba(20, 83, 45, 0.22);
+      color: #fef08a;
+      font-size: 11px;
+    }
+
+    /* Instant Claim Interception Banner */
+    .assist-claim-banner {
+      background: linear-gradient(135deg, rgba(124, 45, 18, 0.96), rgba(67, 20, 7, 0.96));
+      border: 2px solid #fb923c;
+      border-radius: 14px;
+      padding: 12px 14px;
+      box-shadow: 0 8px 24px rgba(249, 115, 22, 0.35);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .assist-claim-banner.pass-mode {
+      background: linear-gradient(135deg, rgba(15, 42, 29, 0.95), rgba(9, 26, 18, 0.95));
+      border-color: rgba(148, 163, 184, 0.45);
+      box-shadow: none;
+    }
+    .claim-head-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .claim-headline {
+      font-size: 15px;
+      font-weight: 900;
+      color: #ffedd5;
+    }
+    .claim-reason {
+      font-size: 12.5px;
+      color: #fed7aa;
+    }
+    .claim-btn-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .btn-exec-claim {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #fff;
+      font-weight: 800;
+      border: none;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12.5px;
+      cursor: pointer;
+    }
+    .btn-dismiss-claim {
+      background: rgba(255, 255, 255, 0.12);
+      color: #e2e8f0;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 8px;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* 4-Seat Full-Table Tactical Sandbox */
+    .assist-sandbox-section {
+      background: rgba(7, 26, 18, 0.9);
+      border: 1px solid rgba(212, 175, 55, 0.4);
+      border-radius: 14px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .sandbox-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .sandbox-title {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--gold-light);
+    }
+    .sandbox-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+    .seat-box[data-seat-box="top"],
+    .seat-box[data-seat-box="bottom"] {
+      grid-column: 1 / -1;
     }
     .assist-camera-placeholder {
-      padding-bottom: 24px !important;
+      display: none !important;
+    }
+    .seat-box {
+      background: rgba(13, 42, 28, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 10px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .seat-box.active-event {
+      border-color: #fbbf24;
+      box-shadow: 0 0 10px rgba(251, 191, 36, 0.25);
+    }
+    .seat-box-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .seat-box-name {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: #f8fafc;
+    }
+    .seat-threat-badge {
+      font-size: 10.5px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #cbd5e1;
+    }
+    .seat-threat-badge.high {
+      background: rgba(220, 38, 38, 0.28);
+      border: 1px solid rgba(248, 113, 113, 0.6);
+      color: #fecaca;
+      font-weight: 700;
+    }
+    .seat-threat-badge.medium {
+      background: rgba(217, 119, 6, 0.25);
+      border: 1px solid rgba(251, 191, 36, 0.5);
+      color: #fde68a;
+    }
+    .seat-row-label {
+      font-size: 10.5px;
+      color: #94a3b8;
+      margin-right: 4px;
+    }
+    .seat-melds-wrap, .seat-discards-wrap {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 4px;
+      min-height: 24px;
+    }
+    .mini-meld-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(212, 175, 55, 0.45);
+      border-radius: 6px;
+      padding: 2px 5px;
+      font-size: 11px;
+      color: #fef08a;
+      cursor: pointer;
+    }
+    .mini-discard-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 5px;
+      padding: 1px 5px;
+      font-size: 11px;
+      color: #f1f5f9;
+      cursor: pointer;
+    }
+    .mini-discard-pill.latest {
+      background: rgba(245, 158, 11, 0.32);
+      border-color: #fbbf24;
+      color: #fef08a;
+      font-weight: 800;
+    }
+
+    /* Quick Target Action Bar & Remaining Badges */
+    .target-mode-bar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+    .target-mode-btn {
+      background: rgba(15, 46, 30, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 5px 9px;
+      font-size: 11.5px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .target-mode-btn.active {
+      background: linear-gradient(135deg, #d97706, #b45309);
+      border-color: #fde68a;
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(217, 119, 6, 0.4);
+    }
+    .meld-submode-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+      padding: 5px 8px;
+      background: rgba(251, 191, 36, 0.12);
+      border: 1px dashed rgba(251, 191, 36, 0.5);
+      border-radius: 8px;
+      font-size: 11.5px;
+      color: #fef08a;
+    }
+    .meld-sub-btn {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #e2e8f0;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .meld-sub-btn.active {
+      background: #10b981;
+      border-color: #a7f3d0;
+      color: #022c22;
+      font-weight: 800;
     }
     .assist-hand-row {
       justify-content: center !important;
@@ -78,17 +383,61 @@
       flex-wrap: wrap !important;
       gap: 4px !important;
     }
+    .assist-pal-item {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
     .assist-pal-item .mj-tile.small-pal-tile {
       width: clamp(26px, 6.8vw, 34px) !important;
       height: calc(clamp(26px, 6.8vw, 34px) * 1.35) !important;
+    }
+    .pal-rem-badge {
+      font-size: 9.5px;
+      font-weight: 700;
+      padding: 0 4px;
+      border-radius: 4px;
+      margin-top: 2px;
+      background: rgba(16, 185, 129, 0.22);
+      color: #a7f3d0;
+    }
+    .pal-rem-badge.rem-1 {
+      background: rgba(245, 158, 11, 0.3);
+      color: #fde68a;
+    }
+    .pal-rem-badge.rem-0 {
+      background: rgba(220, 38, 38, 0.38);
+      color: #fecaca;
+    }
+    .danger-pill {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 6px;
+    }
+    .danger-pill.safe, .danger-pill.low {
+      background: rgba(16, 185, 129, 0.22);
+      color: #a7f3d0;
+      border: 1px solid rgba(52, 211, 153, 0.4);
+    }
+    .danger-pill.medium {
+      background: rgba(234, 179, 8, 0.2);
+      color: #fef08a;
+      border: 1px solid rgba(250, 204, 21, 0.35);
+    }
+    .danger-pill.high {
+      background: rgba(220, 38, 38, 0.32);
+      color: #fecaca;
+      border: 1px solid rgba(248, 113, 113, 0.65);
     }
     @media (max-width: 680px) {
       .assist-top-grid {
         grid-template-columns: 1fr !important;
       }
       .assist-viewfinder {
-        min-height: 155px !important;
-        max-height: 195px !important;
+        min-height: 170px !important;
+        max-height: 210px !important;
       }
     }
   </style>
@@ -100,82 +449,123 @@
       <div>
         <div class="standalone-brand">
           <span>📷</span>
-          <span>麻将实景识牌军师 · 雀神AI辅助</span>
+          <span>麻将全局实时盯盘军师 · 雀神AI攻防</span>
         </div>
-        <div class="standalone-sub" id="assistCameraStatus">将现实中的 13 或 14 张麻将牌排成一排拍照识别，或点击下方牌库极速选牌</div>
+        <div class="standalone-sub" id="assistCameraStatus">🟢 实时全局盯盘就绪：开启「🔴 实时盯盘」后手机对准麻将桌，手移开自动识牌给建议</div>
       </div>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <button type="button" class="ghost-btn assist-mini-btn" id="btnAssistDemoHand">🎲 随机示例</button>
-        <button type="button" class="ghost-btn assist-mini-btn" id="btnAssistClearHand">🗑️ 清空手牌</button>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <button type="button" class="ghost-btn assist-mini-btn" id="btnAssistUndo" title="撤销上一步记录">↩️ 撤销</button>
+        <button type="button" class="ghost-btn assist-mini-btn" id="btnAssistDemoHand">🎲 演示牌局</button>
+        <button type="button" class="ghost-btn assist-mini-btn" id="btnAssistClearHand">🔄 新一局</button>
       </div>
     </header>
 
-    <!-- 1. Camera Viewfinder & Controls -->
+    <!-- 1. Camera Viewfinder (with 5-Zone Overlay) & Real-Time Controls -->
     <section class="assist-top-grid">
       <div class="assist-viewfinder">
+        <div class="assist-watch-pill" id="assistWatchIndicator">
+          <span class="watch-dot"></span>
+          <span id="assistWatchStateText">待机中（点击右侧开启实时盯盘）</span>
+        </div>
         <video id="assistCameraVideo" playsinline autoplay muted style="display:none;"></video>
         <canvas id="assistSnapCanvas" style="display:none;"></canvas>
         <div class="assist-camera-placeholder" id="assistCameraPlaceholder">
-          <div style="font-size:32px;">📷</div>
-          <div>点击右侧「🎥 开启摄像头」或「🖼️ 拍照/传图」读取手牌</div>
+          <div style="font-size:28px;">📷</div>
+          <div style="font-size:12px;">手机架在桌前点击「🔴 开启实时盯盘」，自动监测四家出牌、吃碰与手牌</div>
         </div>
-        <div class="assist-scan-frame">
-          <span class="assist-scan-hint">请将一排麻将牌横向对齐放入虚线框内</span>
+        <!-- 5-Zone Tactical Overlay -->
+        <div class="assist-zone-overlay" id="assistZoneOverlay">
+          <div class="zone-box zone-top">⬆️ 对家(上) · 副露 & 舍牌区</div>
+          <div class="zone-box zone-left">⬅️ 上家(左)<br/>吃碰/舍牌</div>
+          <div class="zone-box zone-center">🀄 中央牌河<br/>最新出牌焦点</div>
+          <div class="zone-box zone-right">➡️ 下家(右)<br/>吃碰/舍牌</div>
+          <div class="zone-box zone-bottom">⬇️ 自家(我) · 13/14张手牌 & 副露对齐区</div>
         </div>
       </div>
 
       <div class="assist-cam-controls">
         <div class="assist-ctrl-row">
-          <button type="button" class="primary-btn green assist-btn" id="btnAssistCapture">📸 立即拍照识别</button>
-          <button type="button" class="primary-btn orange assist-btn" id="btnAssistUpload">🖼️ 拍照/相册上传</button>
+          <button type="button" class="primary-btn orange assist-btn" id="btnAssistAutoWatch">🔴 开启实时盯盘</button>
+          <button type="button" class="primary-btn green assist-btn" id="btnAssistCapture">📸 立即抓拍全局</button>
+          <button type="button" class="ghost-btn assist-mini-btn" id="btnAssistUpload">🖼️ 传图</button>
           <input type="file" id="assistFileInput" accept="image/*" capture="environment" style="display:none;" />
         </div>
         <div class="assist-ctrl-row">
-          <button type="button" class="ghost-btn assist-mini-btn" id="btnAssistStartCam">🎥 开启摄像头</button>
-          <select id="assistTargetCountSelect" class="assist-select" title="识别张数" style="flex:1;">
-            <option value="14" selected>识别 14 张 (轮到出牌)</option>
-            <option value="13">识别 13 张 (听牌/等摸)</option>
-            <option value="11">识别 11 张 (已吃碰1副)</option>
-            <option value="10">识别 10 张 (已吃碰1副)</option>
-            <option value="8">识别 8 张 (已吃碰2副)</option>
-            <option value="7">识别 7 张 (已吃碰2副)</option>
+          <button type="button" class="ghost-btn assist-mini-btn" id="btnAssistStartCam">🎥 摄像头</button>
+          <button type="button" class="ghost-btn assist-mini-btn" id="btnAssistVoiceOut">🔊 语音报招: 开</button>
+          <button type="button" class="ghost-btn assist-mini-btn" id="btnAssistVoiceIn">🎙️ 语音记牌</button>
+        </div>
+        <div class="assist-ctrl-row">
+          <select id="assistScanModeSelect" class="assist-select" title="镜头扫描范围" style="flex:1.2;">
+            <option value="full" selected>🌐 全桌五区俯拍 (手牌+三家吃碰舍牌)</option>
+            <option value="hand">🀄 近拍自家手牌 (三家由沙盘/语音速记)</option>
+          </select>
+          <select id="assistTargetCountSelect" class="assist-select" title="自家手牌张数" style="flex:1;">
+            <option value="14" selected>手牌 14 张 (该我出牌)</option>
+            <option value="13">手牌 13 张 (等摸/可吃碰)</option>
+            <option value="11">手牌 11 张 (已1副露)</option>
+            <option value="10">手牌 10 张 (已1副露)</option>
+            <option value="8">手牌 8 张 (已2副露)</option>
+            <option value="7">手牌 7 张 (已2副露)</option>
           </select>
         </div>
         <div class="assist-api-bar">
           <span>🤖 Gemini Key(选填)：</span>
-          <input id="assistGeminiKeyInput" type="password" placeholder="可填免费 Gemini API Key 秒识，留空用本地引擎" />
+          <input id="assistGeminiKeyInput" type="password" placeholder="填入免费 Gemini Key 开启全桌四家高精度视觉解析" />
         </div>
       </div>
     </section>
 
-    <!-- 2. Current Hand Interactive Editor -->
+    <!-- 2. Instant Opponent Discard Claim Interception Banner (吃/碰/杠/胡 实时拦截建议) -->
+    <section id="assistClaimBannerWrap" style="display:none;">
+      <div class="assist-claim-banner" id="assistClaimBanner"></div>
+    </section>
+
+    <!-- 3. Four-Seat Full-Table Tactical Sandbox (四家全局实时沙盘：谁打了什么、谁吃了什么、谁碰了什么) -->
+    <section class="assist-sandbox-section" id="assistTableSandbox">
+      <div class="sandbox-header">
+        <span class="sandbox-title">🧭 四家全局实时牌局（点击任意吃碰或舍牌可移除/重算，最新出牌高亮）</span>
+        <span style="font-size:11.5px;color:#94a3b8;" id="assistTotalVisibleStat">全桌已现：0 张</span>
+      </div>
+      <div class="sandbox-grid" id="assistSandboxGrid"></div>
+    </section>
+
+    <!-- 4. Current Own Hand Interactive Editor -->
     <section class="assist-hand-section">
       <div class="assist-hand-header">
         <span class="assist-hand-badge" id="assistHandCountBadge">当前手牌：14 张</span>
-        <span class="assist-edit-hint" id="assistEditModeHint">💡 点击手牌可替换校正，点击右上角 × 可打出/移除</span>
+        <span class="assist-edit-hint" id="assistEditModeHint">💡 点击手牌可替换校正，点击右上角 × 即为「打出此牌」并自动记入自家牌河</span>
       </div>
       <div class="assist-hand-row" id="assistHandRow"></div>
     </section>
 
-    <!-- 3. Master AI Recommendations & Ting Output -->
+    <!-- 5. Master AI Attack & Defense Recommendations -->
     <section class="assist-analysis-box" id="assistAnalysisOutput"></section>
 
-    <!-- 4. One-Tap Tile Keyboard for Instant Correction or Drawing New Tile -->
+    <!-- 6. Quick Target Mode Bar & Full-Table Remaining-Tile Keyboard -->
     <section class="assist-palette-wrap">
-      <div class="assist-palette-title">🀄 极速牌库（点击上方手牌后点此秒改；未选中时点此即为「摸进新牌」）：</div>
+      <div class="assist-palette-title">🎯 极速全局记牌 / 改牌键盘（先选下方方位动作，再点麻将牌即可秒记“谁打了什么/谁吃碰了什么”）：</div>
+      <div class="target-mode-bar" id="assistTargetModeBar">
+        <button type="button" class="target-mode-btn active" data-target-mode="my-hand">🀄 改/摸自家手牌</button>
+        <button type="button" class="target-mode-btn" data-target-mode="left-discard">⬅️ 上家打牌</button>
+        <button type="button" class="target-mode-btn" data-target-mode="left-meld">⬅️ 上家吃/碰/杠</button>
+        <button type="button" class="target-mode-btn" data-target-mode="top-discard">⬆️ 对家打牌</button>
+        <button type="button" class="target-mode-btn" data-target-mode="top-meld">⬆️ 对家吃/碰/杠</button>
+        <button type="button" class="target-mode-btn" data-target-mode="right-discard">➡️ 下家打牌</button>
+        <button type="button" class="target-mode-btn" data-target-mode="right-meld">➡️ 下家吃/碰/杠</button>
+        <button type="button" class="target-mode-btn" data-target-mode="bottom-meld">⬇️ 自家吃/碰/杠</button>
+      </div>
+      <div class="meld-submode-bar" id="assistMeldSubmodeBar" style="display:none;">
+        <span>副露类型：</span>
+        <button type="button" class="meld-sub-btn active" data-meld-type="peng">碰牌 (点1张自动生成3张刻子)</button>
+        <button type="button" class="meld-sub-btn" data-meld-type="chi">吃顺子 (点最小牌如三万自动生成三四五万)</button>
+        <button type="button" class="meld-sub-btn" data-meld-type="gang">杠牌 (点1张自动生成4张杠子)</button>
+      </div>
       <div class="assist-tile-palette" id="assistTilePalette"></div>
     </section>
   </div>
 
-  <script src="./engine.js?v=1.0.0"></script>
-  <script src="./camera-assist.js?v=1.0.0"></script>
-  <script>
-    // Auto-render on standalone page load
-    window.addEventListener('DOMContentLoaded', function() {
-      if (window.MahjongCameraAssist) {
-        window.MahjongCameraAssist.setHand([0, 1, 2, 4, 5, 9, 10, 11, 18, 19, 20, 27, 27, 31]);
-      }
-    });
-  </script>
+  <script src="./engine.js?v=2.0.0"></script>
+  <script src="./camera-assist.js?v=2.0.0"></script>
 </body>
 </html>
